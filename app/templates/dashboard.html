@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, sans, lifebar, codebox %}
+{% block title %}Übersicht{% endblock %}
+{% block content %}
+<h1>Übersicht</h1>
+
+<div class="grid cols-4">
+  <a class="stat ok" href="/certs?status=valid"><div class="num">{{ counts.valid }}</div><div class="lbl">gültig</div></a>
+  <a class="stat warn" href="/certs?status=expiring"><div class="num">{{ counts.expiring }}</div><div class="lbl">läuft in &lt; {{ warn }} Tagen ab</div></a>
+  <a class="stat bad" href="/certs?status=expired"><div class="num">{{ counts.expired }}</div><div class="lbl">abgelaufen</div></a>
+  <a class="stat" href="/certs?status=revoked"><div class="num">{{ counts.revoked }}</div><div class="lbl">widerrufen</div></a>
+</div>
+<p class="muted" style="margin-top:.5rem;font-size:.85rem">{{ current_total }} aktuelle Zertifikate · {{ total }} insgesamt ausgestellt (inkl. ersetzter ACME-Erneuerungen)</p>
+
+{% if attention or ep_problems %}
+<h2>Braucht Aufmerksamkeit</h2>
+<div class="panel">
+  {% if attention %}
+  <p class="hint" style="margin-top:0">ACME-Clients wie certbot erneuern normalerweise 30 Tage vor Ablauf. Taucht ein ACME-Zertifikat hier auf, ist die automatische Erneuerung vermutlich fehlgeschlagen.</p>
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th>Läuft ab</th><th>Über</th></tr></thead>
+    <tbody>
+    {% for c in attention %}
+      <tr><td><a href="/certs/{{ c.serial }}">{{ c.display_name }}</a></td><td>{{ status_badge(c, warn) }}</td>
+          <td class="nowrap">{{ c.not_after|d }} <span class="sub">({% if c.days_left >= 0 %}noch {{ c.days_left }} Tage{% else %}vor {{ -c.days_left }} Tagen{% endif %})</span></td><td>{{ c.via }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if ep_problems %}
+  <h3>Endpunkte</h3>
+  <table><tbody>
+    {% for e in ep_problems %}
+    <tr><td class="mono">{{ e.host }}:{{ e.port }}</td><td><span class="badge {{ e.status }}">{{ "Fehler" if e.status == "error" else "Warnung" }}</span></td><td>{{ e.error }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid cols-2" style="margin-top:1.5rem">
+  <div>
+    <h2 style="margin-top:0">Zuletzt ausgestellt</h2>
+    <div class="panel">
+      {% if recent %}
+      <table><tbody>
+        {% for c in recent %}
+        <tr><td><a href="/certs/{{ c.serial }}">{{ c.display_name }}</a><div class="sub">{{ c.not_before|dt }} · {{ c.via }}</div></td>
+            <td class="right">{{ status_badge(c, warn) }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}
+      <p class="muted">Noch keine Zertifikate ausgestellt. Richte auf einem Server certbot ein (siehe <a href="/trust">Einrichtung</a>) oder <a href="/generate">erstelle eines manuell</a>.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div>
+    <h2 style="margin-top:0">CA</h2>
+    <div class="panel">
+      <dl class="kv">
+        <dt>ACME-Directory</dt><dd><code>{{ cfg.acme_directory }}</code></dd>
+        <dt>Root</dt><dd>{{ root.subject.rfc4514_string() }}<div class="sub">gültig bis {{ root.not_valid_after_utc|d }}</div></dd>
+        {% if inter %}<dt>Intermediate</dt><dd>{{ inter.subject.rfc4514_string() }}<div class="sub">gültig bis {{ inter.not_valid_after_utc|d }}</div></dd>{% endif %}
+        <dt>Erlaubte Namen</dt><dd>
+          {% if constraints.active %}
+            {% for d in constraints.dns %}<span class="tag">{{ d }}</span>{% endfor %}
+            {% for n in constraints.ip %}<span class="tag">{{ n }}</span>{% endfor %}
+          {% else %}<span class="badge warn">keine Einschränkung</span>{% endif %}
+        </dd>
+        <dt>Root-Fingerprint</dt><dd class="mono" style="font-size:.75rem">{{ fingerprint|fp }}</dd>
+      </dl>
+      <div class="actions"><a class="btn" href="/public/root_ca.crt">Root-Zertifikat laden</a><a class="btn" href="/trust">Einrichtung</a></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

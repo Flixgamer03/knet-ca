@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, codebox, csrf_field %}
+{% block title %}{{ c.display_name }}{% endblock %}
+{% block content %}
+<p><a href="/certs">← Zertifikate</a></p>
+<h1>{{ c.display_name }} &nbsp;{{ status_badge(c, warn) }}</h1>
+{% if new %}<div class="alert ok">Zertifikat ausgestellt. Unten kannst du es herunterladen.</div>{% endif %}
+{% if revoke_error %}<div class="alert bad">{{ revoke_error }}</div>{% endif %}
+{% if c.superseded_by %}<div class="alert info">Es gibt ein <a href="/certs/{{ c.superseded_by }}">neueres Zertifikat</a> mit denselben Namen.</div>{% endif %}
+
+<div class="panel">
+  <dl class="kv">
+    <dt>Subject</dt><dd>{{ c.subject }}</dd>
+    <dt>SANs</dt><dd>{% for s in c.sans %}<span class="tag">{{ s }}</span>{% else %}<span class="muted">keine</span>{% endfor %}</dd>
+    <dt>Gültig</dt><dd>{{ c.not_before|dt }} – {{ c.not_after|dt }} <span class="muted">({{ c.lifetime_days }} Tage{% if c.days_left >= 0 %}, noch {{ c.days_left }}{% endif %})</span></dd>
+    <dt>Schlüssel</dt><dd>{{ c.key }}</dd>
+    <dt>Verwendung</dt><dd>{{ ekus|join(", ") or "–" }}</dd>
+    <dt>Ausgestellt über</dt><dd>{{ c.via }}</dd>
+    <dt>Aussteller</dt><dd>{{ c.issuer }}</dd>
+    <dt>Seriennummer</dt><dd class="mono">{{ c.serial }}<div class="sub">{{ c.serial_hex }}</div></dd>
+    <dt>SHA-256</dt><dd class="mono" style="font-size:.78rem">{{ c.fingerprint|fp }}</dd>
+    {% if c.revoked is not none %}<dt>Widerrufen</dt><dd><span class="badge revoked">{{ c.revoked_reason }}</span> <span class="muted">{{ c.revoked_at }}</span></dd>{% endif %}
+  </dl>
+  <div class="actions">
+    <a class="btn primary" href="/certs/{{ c.serial }}/download/fullchain">Fullchain (.pem)</a>
+    <a class="btn" href="/certs/{{ c.serial }}/download/cert">Zertifikat (.crt)</a>
+    <a class="btn" href="/certs/{{ c.serial }}/download/chain">Intermediate (.pem)</a>
+    <a class="btn" href="/certs/{{ c.serial }}/download/der">DER (.cer)</a>
+    {% if c.sans %}<a class="btn" href="/endpoints?host={{ c.sans[0] | urlencode }}">Endpunkt überwachen</a>{% endif %}
+  </div>
+  <p class="hint">Für nginx, Apache, Traefik &amp; Co. meist die <strong>Fullchain</strong> verwenden. Der private Schlüssel ist nur dort vorhanden, wo der CSR erzeugt wurde.</p>
+</div>
+
+<div class="panel" data-tabgroup>
+  <div class="tabs"><button class="active" data-tab="t-cert">Zertifikat (PEM)</button><button data-tab="t-chain">Intermediate (PEM)</button></div>
+  <div id="t-cert" class="tabpane active">{{ codebox("pem-cert", pem_text) }}</div>
+  <div id="t-chain" class="tabpane">{{ codebox("pem-chain", chain_text) }}</div>
+</div>
+
+{% if history %}
+<h2>Weitere Zertifikate mit denselben Namen</h2>
+<div class="panel"><table><tbody>
+{% for h in history %}
+  <tr><td><a href="/certs/{{ h.serial }}" class="mono">{{ h.serial[:16] }}…</a></td><td>{{ h.not_before|d }} – {{ h.not_after|d }}</td><td>{{ status_badge(h, warn) }}</td><td>{{ h.via }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+{% if c.revoked is none and c.days_left >= 0 %}
+<h2>Widerrufen</h2>
+<div class="panel">
+  <form method="post" action="/certs/{{ c.serial }}/revoke">
+    {{ csrf_field(csrf) }}
+    <div class="row">
+      <div><label>Grund</label>
+        <select name="reason_code">{% for code, label in REASONS.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}</select></div>
+      <div><label>Notiz <span class="hint">(optional)</span></label><input type="text" name="reason" maxlength="200"></div>
+    </div>
+    <label class="check"><input type="checkbox" name="confirm" value="yes"> Ja, dieses Zertifikat endgültig widerrufen</label>
+    <p class="hint">Die Seriennummer landet in der Sperrliste (CRL). Clients prüfen Widerrufe aber oft nicht – bei kompromittierten Schlüsseln das Zertifikat zusätzlich auf dem Server ersetzen.</p>
+    <button class="btn danger" type="submit">Widerrufen</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

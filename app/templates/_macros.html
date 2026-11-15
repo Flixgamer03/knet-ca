@@ -1,0 +1,23 @@
+{% macro status_badge(c, warn) -%}
+  {%- set s = c.status(warn) -%}
+  <span class="badge {{ s }}">{{ STATUS_LABELS[s] }}</span>
+  {%- if c.superseded_by and s != "revoked" %} <span class="badge gray" title="Es gibt ein neueres Zertifikat mit denselben Namen">ersetzt</span>{% endif -%}
+{%- endmacro %}
+
+{% macro lifebar(c) -%}
+  {%- set total = c.lifetime_days -%}
+  {%- set left = c.days_left if c.days_left > 0 else 0 -%}
+  {%- set pct = (100 * left / total) | round(0, 'floor') if total else 0 -%}
+  <div class="progress {% if pct < 15 %}bad{% elif pct < 34 %}warn{% endif %}"><span style="width: {{ pct }}%"></span></div>
+{%- endmacro %}
+
+{% macro sans(list, limit=4) -%}
+  {%- for s in list[:limit] %}<span class="tag">{{ s }}</span>{% endfor -%}
+  {%- if list|length > limit %}<span class="muted">+{{ list|length - limit }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro codebox(id, text, cls="") -%}
+<div class="codebox"><button type="button" class="btn small copy" data-copy="#{{ id }}">Kopieren</button><pre id="{{ id }}" class="{{ cls }}">{{ text }}</pre></div>
+{%- endmacro %}
+
+{% macro csrf_field(csrf) %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}

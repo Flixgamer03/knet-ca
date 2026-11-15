@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Zertifikat erstellt{% endblock %}
+{% block content %}
+<h1>Zertifikat erstellt</h1>
+<div class="alert warn"><strong>Jetzt herunterladen:</strong> Der private Schlüssel wird nicht gespeichert und ist nach Verlassen der Seite weg.</div>
+<div class="panel">
+  <dl class="kv">
+    <dt>Namen</dt><dd>{% for n in names %}<span class="tag">{{ n }}</span>{% endfor %}</dd>
+    <dt>Gültig bis</dt><dd>{{ not_after|dt }}</dd>
+    <dt>Details</dt><dd><a href="/certs/{{ serial }}">Zertifikatsseite öffnen</a></dd>
+  </dl>
+  <div class="actions">
+    <button class="btn primary" data-download="#key" data-filename="{{ name }}.key">Schlüssel (.key)</button>
+    <button class="btn primary" data-download="#fullchain" data-filename="{{ name }}.fullchain.pem">Fullchain (.pem)</button>
+    <button class="btn" data-download="#cert" data-filename="{{ name }}.crt">Zertifikat (.crt)</button>
+    {% if p12_b64 %}<button class="btn primary" data-download="#p12" data-b64="1" data-filename="{{ name }}.p12">PKCS#12 (.p12)</button>{% endif %}
+  </div>
+</div>
+<div class="panel" data-tabgroup>
+  <div class="tabs"><button class="active" data-tab="t-key">Schlüssel</button><button data-tab="t-full">Fullchain</button><button data-tab="t-cert">Zertifikat</button></div>
+  <div id="t-key" class="tabpane active"><div class="codebox"><button type="button" class="btn small copy" data-copy="#key">Kopieren</button><textarea id="key" class="pem" readonly>{{ key_pem }}</textarea></div></div>
+  <div id="t-full" class="tabpane"><div class="codebox"><button type="button" class="btn small copy" data-copy="#fullchain">Kopieren</button><textarea id="fullchain" class="pem" readonly>{{ fullchain_pem }}</textarea></div></div>
+  <div id="t-cert" class="tabpane"><div class="codebox"><button type="button" class="btn small copy" data-copy="#cert">Kopieren</button><textarea id="cert" class="pem" readonly>{{ cert_pem }}</textarea></div></div>
+  {% if p12_b64 %}<textarea id="p12" hidden>{{ p12_b64 }}</textarea>{% endif %}
+</div>
+{% endblock %}

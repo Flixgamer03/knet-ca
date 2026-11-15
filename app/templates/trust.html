@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_macros.html" import codebox %}
+{% block title %}Einrichtung & Root-CA{% endblock %}
+{% set acme = cfg.acme_directory %}
+{% set domain = (cfg.ca_hostname.split('.', 1)[1]) if '.' in cfg.ca_hostname else 'home.lan' %}
+{% block content %}
+<h1>Einrichtung &amp; Root-CA</h1>
+<p class="lead">Damit Geräte Zertifikate dieser CA akzeptieren, muss das Root-Zertifikat einmalig als vertrauenswürdig installiert werden.</p>
+
+<div class="grid cols-2">
+  <div class="panel">
+    <h3 style="margin-top:0">Downloads</h3>
+    <div class="actions" style="margin-top:.4rem">
+      <a class="btn primary" href="/public/root_ca.crt">Root (PEM .crt)</a>
+      <a class="btn" href="/public/root_ca.cer">Root (DER .cer)</a>
+      <a class="btn" href="/public/intermediate_ca.crt">Intermediate</a>
+      <a class="btn" href="/public/ca_chain.pem">Kette</a>
+    </div>
+    <p class="hint">Diese Links sind ohne Login erreichbar – das Root-Zertifikat ist öffentlich.</p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Root-Fingerprint (SHA-256)</h3>
+    <p class="mono" style="word-break:break-all;font-size:.85rem">{{ fingerprint|fp }}</p>
+    <p class="hint">Vor dem Vertrauen vergleichen. Gültig bis {{ root.not_valid_after_utc|d }}.
+    {% if constraints.active %}Die Intermediate-CA darf nur Namen unter {% for d in constraints.dns %}<code>{{ d }}</code>{% if not loop.last %}, {% endif %}{% endfor %} ausstellen (Name Constraints).{% endif %}</p>
+  </div>
+</div>
+
+<h2>Linux-Server in einem Schritt</h2>
+<div class="panel">
+  <p>Lädt das Root-Zertifikat, prüft den Fingerprint, installiert es im System und richtet die certbot-Erneuerung so ein, dass sie der CA vertraut (Debian/Ubuntu, RHEL/CentOS/Fedora/Rocky, Alpine, Arch, Proxmox). Nutzt nur die Ports {{ cfg.public_http_public_port if cfg.public_http_url else cfg.acme_public_port }} und {{ cfg.acme_public_port }} – funktioniert also auch aus einer DMZ, in der die Web-GUI gesperrt ist.</p>
+  {% set root_src = (cfg.public_http_url ~ "/public/root_ca.crt -o /tmp/ca-root.crt") if cfg.public_http_url else ("-k " ~ cfg.ca_public_url ~ "/public/root_ca.crt -o /tmp/ca-root.crt") %}
+  {{ codebox("oneliner", "curl -fsS " ~ root_src ~ " \\
+  && openssl x509 -in /tmp/ca-root.crt -noout -fingerprint -sha256 | grep -qi '" ~ (fingerprint|fp) ~ "' \\
+  && curl -fsS --cacert /tmp/ca-root.crt " ~ cfg.ca_public_url ~ "/public/bootstrap.sh | sudo sh") }}
+  <p class="hint">Bricht der Befehl nach dem zweiten Teil ohne Meldung ab, stimmt der Fingerprint nicht – dann nicht weitermachen.</p>
+</div>
+
+<h2>ACME-Clients</h2>
+<div class="panel" data-tabgroup>
+  <p style="margin-top:0">ACME-Directory: <code>{{ acme }}</code></p>
+  <div class="tabs">
+    <button class="active" data-tab="a-certbot">certbot</button><button data-tab="a-acmesh">acme.sh</button>
+    <button data-tab="a-caddy">Caddy</button><button data-tab="a-traefik">Traefik</button>
+    <button data-tab="a-proxmox">Proxmox</button><button data-tab="a-npm">Nginx Proxy Manager</button>
+  </div>
+  <div id="a-certbot" class="tabpane active">
+    <p>Voraussetzung: Root-CA ist im System installiert (siehe oben). Die CA prüft per HTTP-01, ob sie den Server unter dem Namen auf Port 80 erreicht.</p>
+    <h3>Standalone (Port 80 frei)</h3>
+    {{ codebox("cb1", "sudo REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt certbot certonly --standalone \\\n  --server " ~ acme ~ " \\\n  -d myserver." ~ domain ~ " --agree-tos -m admin@" ~ domain ~ " --no-eff-email") }}
+    <h3>nginx / Webroot</h3>
+    {{ codebox("cb2", "sudo REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt certbot --nginx --server " ~ acme ~ " -d myserver." ~ domain ~ "\n# oder\nsudo REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt certbot certonly --webroot -w /var/www/html \\\n  --server " ~ acme ~ " -d myserver." ~ domain) }}
+    <p class="hint">Unter RHEL/Fedora lautet der Bundle-Pfad <code>/etc/pki/tls/certs/ca-bundle.crt</code>. Das Bootstrap-Skript setzt die Variable auch für den Erneuerungs-Timer. Erneuerung testen: <code>sudo certbot renew --dry-run --server {{ acme }}</code> – ohne <code>--server</code> prüft certbot beim Probelauf gegen Let's Encrypt Staging und scheitert an internen Namen. Alternativ echte Erneuerung: <code>sudo certbot renew --force-renewal</code>.</p>
+  </div>
+  <div id="a-acmesh" class="tabpane">
+    {{ codebox("as1", "acme.sh --issue --standalone -d myserver." ~ domain ~ " \\\n  --server " ~ acme ~ " \\\n  --ca-bundle /path/to/root_ca.crt") }}
+  </div>
+  <div id="a-caddy" class="tabpane">
+    {{ codebox("cd1", "{\n    acme_ca " ~ acme ~ "\n    acme_ca_root /etc/caddy/root_ca.crt\n}\n\nmyserver." ~ domain ~ " {\n    reverse_proxy localhost:8080\n}") }}
+  </div>
+  <div id="a-traefik" class="tabpane">
+    {{ codebox("tr1", "# traefik.yml\ncertificatesResolvers:\n  knetca:\n    acme:\n      caServer: " ~ acme ~ "\n      email: admin@" ~ domain ~ "\n      storage: /letsencrypt/acme.json\n      httpChallenge:\n        entryPoint: web\n\n# Container-Umgebung:\n#   LEGO_CA_CERTIFICATES=/certs/root_ca.crt") }}
+  </div>
+  <div id="a-proxmox" class="tabpane">
+    <p>Root-CA zuerst per Bootstrap-Skript installieren, dann:</p>
+    {{ codebox("px1", "pvenode acme account register knet-ca admin@" ~ domain ~ " --directory " ~ acme ~ "\npvenode config set --acme account=knet-ca,domains=pve." ~ domain ~ "\npvenode acme cert order") }}
+  </div>
+  <div id="a-npm" class="tabpane">
+    <p>NPM unterstützt keine eigenen ACME-Server. Erzeuge unter <a href="/generate">Neues Zertifikat</a> ein Zertifikat (z.&nbsp;B. Wildcard <code>*.{{ domain }}</code>) und lade Schlüssel + Fullchain in NPM unter <em>SSL Certificates → Add → Custom</em> hoch.</p>
+  </div>
+</div>
+
+<h2>Root-CA auf Clients installieren</h2>
+<div class="panel" data-tabgroup>
+  <div class="tabs">
+    <button class="active" data-tab="o-win">Windows</button><button data-tab="o-mac">macOS</button>
+    <button data-tab="o-linux">Linux-Desktop</button><button data-tab="o-ff">Firefox</button>
+    <button data-tab="o-ios">iOS / iPadOS</button><button data-tab="o-android">Android</button>
+    <button data-tab="o-java">Java / Docker</button>
+  </div>
+  <div id="o-win" class="tabpane active">
+    <p><a href="/public/root_ca.cer">root_ca.cer</a> herunterladen und in einer Administrator-PowerShell:</p>
+    {{ codebox("w1", "Import-Certificate -FilePath .\\" ~ base ~ "-root.cer -CertStoreLocation Cert:\\LocalMachine\\Root") }}
+    <p class="hint">Alternativ Doppelklick → „Zertifikat installieren“ → „Lokaler Computer“ → Speicher „Vertrauenswürdige Stammzertifizierungsstellen“. Chrome und Edge nutzen den Windows-Speicher.</p>
+  </div>
+  <div id="o-mac" class="tabpane">
+    {{ codebox("m1", "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/Downloads/*-root.crt") }}
+  </div>
+  <div id="o-linux" class="tabpane">
+    <p>Das Bootstrap-Skript oben funktioniert auch auf Desktops. Manuell (Debian/Ubuntu):</p>
+    {{ codebox("l1", "sudo cp root_ca.crt /usr/local/share/ca-certificates/knet-ca-root.crt && sudo update-ca-certificates") }}
+    <p class="hint">Chrome/Chromium unter Linux nutzen eine eigene NSS-Datenbank: <code>certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "{{ cfg.ca_name }}" -i root_ca.crt</code></p>
+  </div>
+  <div id="o-ff" class="tabpane">
+    <p>Firefox nutzt einen eigenen Zertifikatsspeicher. Entweder unter <em>Einstellungen → Datenschutz &amp; Sicherheit → Zertifikate anzeigen → Zertifizierungsstellen → Importieren</em> die Root-CA importieren und „Websites identifizieren“ anhaken, oder unter Windows/macOS in <code>about:config</code> <code>security.enterprise_roots.enabled</code> auf <code>true</code> setzen.</p>
+  </div>
+  <div id="o-ios" class="tabpane">
+    <p>In Safari <a href="/public/root_ca.cer">root_ca.cer</a> öffnen → <em>Einstellungen → Profil geladen → Installieren</em>. Danach unbedingt <em>Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen</em> öffnen und das volle Vertrauen für die Root-CA aktivieren.</p>
+  </div>
+  <div id="o-android" class="tabpane">
+    <p><a href="/public/root_ca.crt">root_ca.crt</a> herunterladen → <em>Einstellungen → Sicherheit → Verschlüsselung &amp; Anmeldedaten → Zertifikat installieren → CA-Zertifikat</em>. Chrome vertraut dann der CA; viele Apps ignorieren vom Nutzer installierte CAs aber absichtlich.</p>
+  </div>
+  <div id="o-java" class="tabpane">
+    {{ codebox("j1", "keytool -importcert -cacerts -alias knet-ca -file root_ca.crt -storepass changeit -noprompt") }}
+    <p>In Docker-Images (Debian-basiert):</p>
+    {{ codebox("j2", "COPY root_ca.crt /usr/local/share/ca-certificates/knet-ca-root.crt\nRUN update-ca-certificates") }}
+  </div>
+</div>
+
+<h2>Weitere Endpunkte der CA</h2>
+<div class="panel">
+  <dl class="kv">
+    <dt>Sperrliste (CRL)</dt><dd><code>{{ cfg.public_http_url or cfg.ca_public_url }}/crl</code></dd>
+    {% if cfg.public_http_url %}<dt>Root per HTTP</dt><dd><code>{{ cfg.public_http_url }}/public/root_ca.crt</code></dd>{% endif %}
+    <dt>Health</dt><dd><code>{{ cfg.ca_public_url }}/health</code></dd>
+  </dl>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}Endpunkte{% endblock %}
+{% block content %}
+<h1>Endpunkte</h1>
+<p class="lead">Prüft regelmäßig (alle {{ cfg.endpoint_check_hours }} h), welches Zertifikat ein Dienst tatsächlich ausliefert. So fällt auf, wenn certbot zwar erneuert hat, der Webserver aber nie neu geladen wurde.</p>
+<div class="panel">
+  <form method="post" action="/endpoints/add" class="row">
+    {{ csrf_field(csrf) }}
+    <div><label>Host</label><input type="text" name="host" value="{{ prefill }}" placeholder="proxmox.home.lan" required></div>
+    <div style="max-width:120px"><label>Port</label><input type="number" name="port" value="443" min="1" max="65535"></div>
+    <div><label>Bezeichnung <span class="hint">(optional)</span></label><input type="text" name="label" placeholder="Proxmox Web-UI"></div>
+    <div class="shrink"><button class="btn primary" type="submit">Hinzufügen</button></div>
+  </form>
+</div>
+<div class="panel" style="padding:.4rem .8rem">
+{% if endpoints %}
+<table>
+  <thead><tr><th>Endpunkt</th><th>Status</th><th>Zertifikat</th><th>Gültig bis</th><th>Geprüft</th><th></th></tr></thead>
+  <tbody>
+  {% for e in endpoints %}
+  <tr>
+    <td><span class="mono">{{ e.host }}:{{ e.port }}</span>{% if e.label %}<div class="sub">{{ e.label }}</div>{% endif %}</td>
+    <td>{% if e.status == "ok" %}<span class="badge ok">OK</span>{% elif e.status == "warn" %}<span class="badge warn">Warnung</span>{% elif e.status == "error" %}<span class="badge error">Fehler</span>{% else %}<span class="badge gray">ungeprüft</span>{% endif %}
+        {% if e.error %}<div class="sub">{{ e.error }}</div>{% endif %}</td>
+    <td>{{ e.subject or "" }}{% if e.issuer %}<div class="sub">von {{ e.issuer }}</div>{% endif %}
+        {% if e.serial and e.ours %}<div class="sub"><a href="/certs/{{ e.serial }}">in der CA ansehen</a></div>{% endif %}</td>
+    <td class="nowrap">{{ e.not_after|isodt }}</td>
+    <td class="nowrap sub">{{ e.last_checked|isodt }}</td>
+    <td class="nowrap right">
+      <form class="inline" method="post" action="/endpoints/{{ e.id }}/check">{{ csrf_field(csrf) }}<button class="btn small">Prüfen</button></form>
+      <form class="inline" method="post" action="/endpoints/{{ e.id }}/delete" data-confirm="Endpunkt {{ e.host }}:{{ e.port }} entfernen?">{{ csrf_field(csrf) }}<button class="btn small danger">×</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/endpoints/check-all" style="margin:.6rem 0">{{ csrf_field(csrf) }}<button class="btn small">Alle jetzt prüfen</button></form>
+{% else %}
+<p class="muted" style="padding:.8rem">Noch keine Endpunkte. Füge z. B. deine Proxmox-, NAS- oder Reverse-Proxy-Adresse hinzu.</p>
+{% endif %}
+</div>
+{% endblock %}

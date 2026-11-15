@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}Neues Zertifikat{% endblock %}
+{% block content %}
+<h1>Neues Zertifikat</h1>
+<p class="lead">Schlüssel und Zertifikat in einem Schritt – für Geräte ohne eigene CSR-Funktion. Der Schlüssel wird nur einmal angezeigt und nicht gespeichert.</p>
+{% if error %}<div class="alert bad">{{ error }}</div>{% endif %}
+<div class="panel">
+<form method="post" action="/generate">
+  {{ csrf_field(csrf) }}
+  <div class="row">
+    <div><label>Hostname (Common Name)</label><input type="text" name="cn" value="{{ form.cn or '' }}" placeholder="printer.home.lan" required></div>
+    <div><label>Organisation <span class="hint">(optional)</span></label><input type="text" name="org" value="{{ form.org or '' }}"></div>
+  </div>
+  <label>Weitere Namen / IP-Adressen <span class="hint">(eine pro Zeile oder durch Komma getrennt, der Hostname wird automatisch aufgenommen)</span></label>
+  <textarea name="sans" style="min-height:5rem" placeholder="scan.home.lan&#10;192.168.1.30">{{ form.sans or '' }}</textarea>
+  {% if constraints.active %}<p class="hint">Diese CA darf nur Namen unter {% for d in constraints.dns %}<code>{{ d }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if constraints.ip %} und IPs aus {% for n in constraints.ip %}<code>{{ n }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %} ausstellen – Kurznamen wie <code>printer</code> sind daher nicht möglich.</p>{% endif %}
+  <div class="row">
+    <div><label>Schlüsseltyp</label>
+      <select name="key_type">{% for k, v in key_types.items() %}<option value="{{ k }}" {% if form.key_type == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select></div>
+    <div><label>Gültigkeit</label>
+      <select name="days">{% for d in choices %}<option value="{{ d }}" {% if d == default_days %}selected{% endif %}>{{ d }} Tage</option>{% endfor %}</select></div>
+  </div>
+  <h3>PKCS#12 / PFX <span class="hint">(optional – für Windows, Synology, Java, Proxmox-Backup …)</span></h3>
+  <div class="row">
+    <div><label>Passwort für .p12</label><input type="password" name="p12_password" autocomplete="new-password"></div>
+    <div class="shrink"><label class="check" style="margin-bottom:.6rem"><input type="checkbox" name="p12_legacy" value="1" {% if form.p12_legacy %}checked{% endif %}> Legacy-Verschlüsselung (3DES/SHA1) für ältere Geräte</label></div>
+  </div>
+  <div class="actions"><button class="btn primary" type="submit">Erzeugen &amp; signieren</button></div>
+</form>
+</div>
+<p class="hint">Wenn möglich besser einen CSR auf dem Gerät erzeugen und unter <a href="/sign">CSR signieren</a> hochladen – dann bleibt der Schlüssel dort.</p>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}CSR signieren{% endblock %}
+{% block content %}
+<h1>CSR signieren</h1>
+<p class="lead">Für Geräte, die ihren Schlüssel selbst erzeugen (NAS, Switches, iDRAC/iLO, Router …). Der private Schlüssel verlässt das Gerät nicht.</p>
+{% if error %}<div class="alert bad">{{ error }}</div>{% endif %}
+
+{% if step == "upload" %}
+<div class="panel">
+  <form method="post" action="/sign/preview" enctype="multipart/form-data">
+    {{ csrf_field(csrf) }}
+    <label>CSR-Datei <span class="hint">(.csr, .pem, .req – PEM oder DER)</span></label>
+    <input type="file" name="csr_file" accept=".csr,.pem,.req,.der,.txt">
+    <label>… oder PEM einfügen</label>
+    <textarea name="csr_text" placeholder="-----BEGIN CERTIFICATE REQUEST-----"></textarea>
+    <div class="actions"><button class="btn primary" type="submit">Prüfen</button></div>
+  </form>
+</div>
+<details class="panel">
+  <summary>CSR selbst erzeugen (OpenSSL)</summary>
+  <pre>openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout server.key -out server.csr \
+  -subj "/CN=nas.{{ (cfg.ca_hostname.split('.', 1)[1]) if '.' in cfg.ca_hostname else 'home.lan' }}" \
+  -addext "subjectAltName=DNS:nas.{{ (cfg.ca_hostname.split('.', 1)[1]) if '.' in cfg.ca_hostname else 'home.lan' }},IP:192.168.1.20"</pre>
+</details>
+{% else %}
+<div class="panel">
+  <h2 style="margin-top:0">Inhalt des CSR</h2>
+  {% if info.errors %}<div class="alert bad"><strong>Kann so nicht signiert werden:</strong><ul>{% for e in info.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if info.warnings %}<div class="alert warn"><ul style="margin:0">{% for w in info.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+  <dl class="kv">
+    <dt>Subject</dt><dd>{{ info.subject or "–" }}</dd>
+    <dt>SANs</dt><dd>{% for s in info.sans %}<span class="tag">{{ s }}</span>{% else %}<span class="muted">keine</span>{% endfor %}</dd>
+    <dt>Schlüssel</dt><dd>{{ info.key }}</dd>
+    <dt>Signatur</dt><dd>{% if info.signature_ok %}<span class="badge ok">gültig</span>{% else %}<span class="badge bad">ungültig</span>{% endif %}</dd>
+  </dl>
+  <p class="hint">Das Zertifikat enthält genau diese SANs. Weitere Felder aus dem CSR (Organisation, Ort …) werden ignoriert; als CN wird der erste Hostname gesetzt.</p>
+  {% if not info.errors %}
+  <form method="post" action="/sign/issue">
+    {{ csrf_field(csrf) }}
+    <input type="hidden" name="csr_pem" value="{{ info.pem }}">
+    <div class="row">
+      <div style="max-width:260px"><label>Gültigkeit</label>
+        <select name="days">{% for d in choices %}<option value="{{ d }}" {% if d == cfg.manual_default_days %}selected{% endif %}>{{ d }} Tage{% if d == 365 %} (1 Jahr){% elif d == 730 %} (2 Jahre){% endif %}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions"><button class="btn primary" type="submit">Signieren</button><a class="btn" href="/sign">Abbrechen</a></div>
+  </form>
+  {% else %}
+  <div class="actions"><a class="btn" href="/sign">Anderen CSR wählen</a></div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

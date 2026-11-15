@@ -1,0 +1,67 @@
+#!/bin/sh
+# Bootstrap für {{ cfg.ca_name }} – installiert die Root-CA und bereitet certbot vor.
+set -eu
+
+ACME_URL="{{ cfg.acme_directory }}"
+NAME="knet-ca-root"
+
+[ "$(id -u)" = "0" ] || { echo "Bitte als root ausführen (sudo)." >&2; exit 1; }
+
+TMP="$(mktemp)"
+cat > "$TMP" <<'PEM'
+{{ root_pem }}
+PEM
+
+if [ -d /usr/local/share/ca-certificates ] && command -v update-ca-certificates >/dev/null 2>&1; then
+  # Debian, Ubuntu, Proxmox, Alpine
+  install -m 0644 "$TMP" "/usr/local/share/ca-certificates/$NAME.crt"
+  update-ca-certificates >/dev/null
+  BUNDLE=/etc/ssl/certs/ca-certificates.crt
+elif [ -d /etc/pki/ca-trust/source/anchors ] && command -v update-ca-trust >/dev/null 2>&1; then
+  # RHEL, Fedora, Rocky, Alma, CentOS
+  install -m 0644 "$TMP" "/etc/pki/ca-trust/source/anchors/$NAME.crt"
+  update-ca-trust extract
+  BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
+elif command -v trust >/dev/null 2>&1; then
+  # Arch, openSUSE
+  trust anchor --store "$TMP"
+  BUNDLE=/etc/ssl/certs/ca-certificates.crt
+  [ -f "$BUNDLE" ] || BUNDLE=/etc/ssl/ca-bundle.pem
+else
+  echo "Unbekanntes System – bitte die Root-CA manuell installieren." >&2
+  exit 1
+fi
+rm -f "$TMP"
+echo "✔ Root-CA '{{ cfg.ca_name }}' installiert."
+
+# certbot: Erneuerungen laufen über systemd/cron und sollen dem System-Bundle vertrauen
+if command -v systemctl >/dev/null 2>&1; then
+  for unit in certbot.service certbot-renew.service snap.certbot.renew.service; do
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+      mkdir -p "/etc/systemd/system/$unit.d"
+      printf '[Service]\nEnvironment=REQUESTS_CA_BUNDLE=%s\n' "$BUNDLE" > "/etc/systemd/system/$unit.d/knet-ca.conf"
+      echo "✔ $unit nutzt jetzt $BUNDLE"
+    fi
+  done
+  systemctl daemon-reload 2>/dev/null || true
+fi
+if [ -d /etc/cron.d ] && [ -f /etc/cron.d/certbot ] && ! grep -q REQUESTS_CA_BUNDLE /etc/cron.d/certbot; then
+  sed -i "1i REQUESTS_CA_BUNDLE=$BUNDLE" /etc/cron.d/certbot
+  echo "✔ /etc/cron.d/certbot nutzt jetzt $BUNDLE"
+fi
+
+HOST="$(hostname -f 2>/dev/null || hostname)"
+cat <<EOT
+
+Nächster Schritt – Zertifikat per ACME holen, z. B.:
+
+  sudo REQUESTS_CA_BUNDLE=$BUNDLE certbot certonly --standalone \\
+    --server $ACME_URL \\
+    -d $HOST
+
+(--standalone braucht freien Port 80; alternativ --nginx, --apache oder --webroot -w <pfad>)
+
+Erneuerung testen (wichtig: --server angeben, sonst prüft certbot gegen Let's Encrypt):
+
+  sudo certbot renew --dry-run --server $ACME_URL
+EOT

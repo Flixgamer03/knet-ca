@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}Werkzeuge{% endblock %}
+{% block content %}
+<h1>Werkzeuge</h1>
+
+<h2 style="margin-top:0">Zertifikat / CSR untersuchen</h2>
+<div class="panel">
+  <form method="post" action="/tools/decode" enctype="multipart/form-data">
+    {{ csrf_field(csrf) }}
+    <label>PEM einfügen <span class="hint">(Zertifikat, Kette oder CSR – auch mehrere Blöcke)</span></label>
+    <textarea name="text">{{ text }}</textarea>
+    <label>… oder Datei</label><input type="file" name="file">
+    <div class="actions"><button class="btn primary" type="submit">Untersuchen</button></div>
+  </form>
+</div>
+{% if results is not none %}
+  {% for r in results %}
+  <div class="panel">
+    <h3 style="margin-top:0">{{ loop.index }}. {{ r.kind }}{% if r.cn %} – {{ r.cn }}{% endif %}</h3>
+    {% if r.error %}<div class="alert bad">{{ r.error }}</div>{% endif %}
+    {% if r.note %}<p class="muted">{{ r.note }}</p>{% endif %}
+    {% if r.errors %}<div class="alert bad"><ul style="margin:0">{% for e in r.errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if r.warnings %}<div class="alert warn"><ul style="margin:0">{% for e in r.warnings %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+    <dl class="kv">
+      {% if r.subject %}<dt>Subject</dt><dd>{{ r.subject }}</dd>{% endif %}
+      {% if r.issuer %}<dt>Aussteller</dt><dd>{{ r.issuer }}</dd>{% endif %}
+      {% if r.ours %}<dt>Von dieser CA?</dt><dd>{% if r.ours.startswith("ja") or r.ours.startswith("das") %}<span class="badge ok">{{ r.ours }}</span>{% else %}<span class="badge gray">nein</span>{% endif %}</dd>{% endif %}
+      {% if r.sans is defined %}<dt>SANs</dt><dd>{% for s in r.sans %}<span class="tag">{{ s }}</span>{% else %}–{% endfor %}</dd>{% endif %}
+      {% if r.not_after %}<dt>Gültig</dt><dd>{{ r.not_before|dt }} – {{ r.not_after|dt }}</dd>{% endif %}
+      {% if r.key %}<dt>Schlüssel</dt><dd>{{ r.key }}</dd>{% endif %}
+      {% if r.ekus %}<dt>Verwendung</dt><dd>{{ r.ekus|join(", ") }}</dd>{% endif %}
+      {% if r.serial %}<dt>Seriennummer</dt><dd class="mono">{{ r.serial }}</dd>{% endif %}
+      {% if r.fingerprint %}<dt>SHA-256</dt><dd class="mono" style="font-size:.78rem">{{ r.fingerprint|fp }}</dd>{% endif %}
+    </dl>
+  </div>
+  {% else %}
+  <div class="alert warn">Nichts Auswertbares gefunden.</div>
+  {% endfor %}
+{% endif %}
+
+<h2>Benachrichtigungen</h2>
+<div class="panel">
+  {% if notify_msg %}<div class="alert {{ 'ok' if notify_ok else 'bad' }}">{{ notify_msg }}</div>{% endif %}
+  {% if cfg.ntfy_url %}
+  <p>Einmal täglich wird an <code>{{ cfg.ntfy_url }}</code> gemeldet, wenn Zertifikate in weniger als {{ cfg.expiry_warn_days }} Tagen ablaufen oder ein Endpunkt Probleme hat.</p>
+  <form method="post" action="/tools/notify">{{ csrf_field(csrf) }}<button class="btn">Testbenachrichtigung senden</button></form>
+  {% else %}
+  <p class="muted">Nicht eingerichtet. Setze <code>NTFY_URL</code> (z. B. <code>https://ntfy.sh/mein-geheimes-topic</code> oder deinen eigenen ntfy-Server) in der <code>.env</code>.</p>
+  {% endif %}
+</div>
+{% endblock %}

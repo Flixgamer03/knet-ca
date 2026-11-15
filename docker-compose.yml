@@ -1,0 +1,30 @@
+name: knet-ca
+
+services:
+  ca:
+    build: .
+    image: knet-ca:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Ports inside the container are fixed; the host ports come from .env
+      ACME_PORT: "9000"
+      WEBUI_PORT: "8443"
+      PUBLIC_HTTP_PORT: "8080"
+      ACME_PUBLIC_PORT: ${ACME_PORT:-9000}
+      WEBUI_PUBLIC_PORT: ${WEBUI_PORT:-8443}
+      PUBLIC_HTTP_PUBLIC_PORT: ${PUBLIC_HTTP_PORT:-8080}
+    ports:
+      - "${ACME_PORT:-9000}:9000"        # ACME for your servers
+      - "${WEBUI_PORT:-8443}:8443"       # web UI
+      - "${PUBLIC_HTTP_PORT:-8080}:8080" # root CA, CRL, bootstrap via HTTP
+    volumes:
+      - ca-data:/data
+    # If the CA cannot resolve your server names for validation,
+    # add your internal DNS server (Pi-hole, AdGuard, router …):
+    # dns:
+    #   - 192.168.1.1
+
+volumes:
+  ca-data:
+    name: knet-ca-data

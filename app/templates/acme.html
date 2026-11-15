@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}ACME{% endblock %}
+{% block content %}
+<h1>ACME</h1>
+<p class="lead">Accounts deiner ACME-Clients und ein Protokoll aller Vorgänge – inklusive der genauen Gründe, wenn eine Prüfung fehlschlägt.</p>
+
+<div class="panel">
+  <dl class="kv">
+    <dt>Directory-URL</dt><dd><code>{{ cfg.acme_directory }}</code></dd>
+    <dt>Laufzeit</dt><dd>{{ cfg.acme_cert_days }} Tage</dd>
+    <dt>Prüfung</dt><dd>http-01 auf Port {{ cfg.http01_port }}, tls-alpn-01 auf Port {{ cfg.tlsalpn01_port }}, dns-01{% if cfg.dns_servers %} über {{ cfg.dns_servers|join(", ") }}{% endif %}
+      {% if cfg.acme_trusted_networks %}<br><span class="badge warn">Ohne Prüfung für {{ cfg.acme_trusted_networks|join(", ") }}</span>{% endif %}</dd>
+    <dt>Clients erlaubt aus</dt><dd>{% for n in cfg.acme_allowed_networks %}<span class="tag">{{ n }}</span>{% endfor %}</dd>
+  </dl>
+</div>
+
+<h2>Accounts</h2>
+<div class="panel" style="padding:.4rem .8rem">
+{% if accounts %}
+<table>
+  <thead><tr><th>Kontakt</th><th>Status</th><th>Zertifikate</th><th>Zuletzt aktiv</th><th>Erstellt von</th><th></th></tr></thead>
+  <tbody>
+  {% for a in accounts %}
+  <tr>
+    <td>{{ a.contact_list|join(", ") or "–" }}<div class="sub mono">{{ a.id }}</div></td>
+    <td>{% if a.status == "valid" %}<span class="badge ok">aktiv</span>{% else %}<span class="badge gray">{{ a.status }}</span>{% endif %}</td>
+    <td>{{ a.certs }} <span class="sub">/ {{ a.orders }} Aufträge</span></td>
+    <td class="nowrap">{{ a.last_seen|isodt }}</td>
+    <td class="mono">{{ a.ip }}</td>
+    <td class="right">
+      <form class="inline" method="post" action="/acme/accounts/{{ a.id }}/{{ 'deactivate' if a.status == 'valid' else 'activate' }}">{{ csrf_field(csrf) }}
+        <button class="btn small {{ 'danger' if a.status == 'valid' }}">{{ "Sperren" if a.status == "valid" else "Entsperren" }}</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted" style="padding:.8rem">Noch keine ACME-Clients registriert.</p>{% endif %}
+</div>
+
+<h2>Protokoll</h2>
+<p><a href="/acme{{ '' if only_errors else '?errors=1' }}">{{ "Alle anzeigen" if only_errors else "Nur Fehler anzeigen" }}</a></p>
+<div class="panel" style="padding:.4rem .8rem">
+{% if events %}
+<table>
+  <thead><tr><th>Zeit</th><th>Vorgang</th><th>Name</th><th>Ergebnis</th><th>Client</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+  <tr>
+    <td class="nowrap">{{ e.ts|isodt }}</td>
+    <td><span class="badge gray">{{ e.kind }}</span></td>
+    <td class="mono">{{ e.identifier or "" }}</td>
+    <td>{% if e.ok %}<span class="badge ok">OK</span>{% else %}<span class="badge bad">Fehler</span>{% endif %} {{ e.detail }}
+        {% if e.account_id %}<div class="sub">{{ acc_names.get(e.account_id, e.account_id) }}</div>{% endif %}</td>
+    <td class="mono sub">{{ e.ip or "" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted" style="padding:.8rem">Noch keine Einträge.</p>{% endif %}
+</div>
+{% endblock %}

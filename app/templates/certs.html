@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, sans, lifebar %}
+{% block title %}Zertifikate{% endblock %}
+{% block content %}
+<h1>Zertifikate</h1>
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Name, SAN oder Seriennummer …">
+  <select name="status" onchange="this.form.submit()">
+    <option value="">Alle Status</option>
+    {% for k, v in STATUS_LABELS.items() %}<option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+  </select>
+  <select name="via" onchange="this.form.submit()">
+    <option value="">Alle Quellen</option>
+    <option value="acme" {% if via == "acme" %}selected{% endif %}>ACME</option>
+    <option value="manual" {% if via == "manual" %}selected{% endif %}>Manuell / Web-GUI</option>
+  </select>
+  <select name="sort" onchange="this.form.submit()">
+    <option value="issued" {% if sort == "issued" %}selected{% endif %}>Neueste zuerst</option>
+    <option value="expiry" {% if sort == "expiry" %}selected{% endif %}>Ablauf zuerst</option>
+    <option value="name" {% if sort == "name" %}selected{% endif %}>Name</option>
+  </select>
+  <label class="check" style="margin:0"><input type="checkbox" name="all" value="1" {% if show_all %}checked{% endif %} onchange="this.form.submit()"> ersetzte anzeigen</label>
+  <button class="btn small" type="submit">Filtern</button>
+</form>
+<div class="panel" style="padding:.4rem .8rem">
+{% if certs %}
+<table>
+  <thead><tr><th>Name / SANs</th><th>Status</th><th>Gültig bis</th><th>Schlüssel</th><th>Über</th><th>Seriennummer</th></tr></thead>
+  <tbody>
+  {% for c in certs %}
+  <tr>
+    <td><a href="/certs/{{ c.serial }}"><strong>{{ c.display_name }}</strong></a><div>{{ sans(c.sans) }}</div></td>
+    <td>{{ status_badge(c, warn) }}</td>
+    <td class="nowrap">{{ c.not_after|d }}<div class="sub">{% if c.days_left >= 0 %}noch {{ c.days_left }} Tage{% else %}vor {{ -c.days_left }} Tagen{% endif %}</div>{{ lifebar(c) }}</td>
+    <td class="nowrap">{{ c.key }}</td>
+    <td>{{ c.via }}</td>
+    <td class="mono sub" title="{{ c.serial_hex }}">{{ c.serial[:10] }}…</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted" style="padding:.8rem">Keine Zertifikate gefunden{% if q or status or via %} – Filter anpassen{% endif %}.</p>
+{% endif %}
+</div>
+<p class="muted" style="font-size:.85rem">{{ certs|length }} angezeigt · {{ total }} insgesamt</p>
+{% endblock %}
